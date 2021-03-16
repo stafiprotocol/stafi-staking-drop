@@ -1,0 +1,14 @@
+{
+  "name": "stafi-staking-drop",
+  "version": "0.1.0",
+  "description": "",
+  "repository": "https://github.com/stafiprotocol/stafi-staking-drop",
+  "scripts": {
+    "compile": "truffle compile"
+  },
+  "author": "Stafi Technologies",
+  "license": "GPL-3.0-only",
+  "devDependencies": {
+    "@openzeppelin/contracts": "^3.2.0"
+  }
+}
