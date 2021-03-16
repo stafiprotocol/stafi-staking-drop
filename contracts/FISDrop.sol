@@ -246,7 +246,8 @@ contract FISDrop is Ownable {
 
     function getUserCurrentTotalReward(uint _pid, address _user) public view returns (uint256) {
         UserInfo storage user = userInfo[_pid][_user];
-        return user.currentTotalReward;
+        uint256 pending = pendingReward(_pid, _user);
+        return user.currentTotalReward.add(pending);
     }
 
     function getUserLastClaimedRewardBlock(uint _pid, address _user) public view returns (uint256) {
