@@ -11,3 +11,9 @@ Requires `nodejs` and `npm`.
 npm install
 npm run compile
 ```
+
+# Test
+
+```
+npx hardhat test
+```
