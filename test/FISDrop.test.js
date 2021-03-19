@@ -1,5 +1,5 @@
 const { ethers } = require("hardhat")
-const { expect } = require("chai")
+const { expect, assert } = require("chai")
 const { time } = require("./utilities")
 
 describe("FISDrop", function () {
@@ -46,6 +46,8 @@ describe("FISDrop", function () {
             await this.lp2.transfer(this.bob.address, "1000")
 
             await this.lp2.transfer(this.carol.address, "1000")
+
+            this.fis = await this.ERC20Mock.deploy("FISToken", "fis", "100000000")
         })
 
         it("should allow emergency withdraw", async function () {
@@ -125,19 +127,20 @@ describe("FISDrop", function () {
             expect(await this.fisDrop.getUserCurrentTotalReward("0", this.bob.address)).to.equal("102")
         })
 
+
         it("should not distribute fis if no one deposit", async function () {
             this.fisDrop = await this.FISDrop.deploy(this.fisToken.address)
             await this.fisDrop.deployed()
-            const startBlock = "100"
+            const startBlock = "200"
             const rewardPerBlock = "10"
             const totalReward = "102"
-            const claimableStartBlock = "130"
-            const lockedEndBlock = "140"
+            const claimableStartBlock = "230"
+            const lockedEndBlock = "240"
 
             await this.fisDrop.add(this.lp.address, startBlock, rewardPerBlock, totalReward, claimableStartBlock, lockedEndBlock)
 
             await this.lp.connect(this.bob).approve(this.fisDrop.address, "1000")
-            await time.advanceBlockTo("189")
+            await time.advanceBlockTo("289")
 
             const pool = await this.fisDrop.poolInfo("0")
             expect(pool.leftReward).to.equal("102")
@@ -221,8 +224,61 @@ describe("FISDrop", function () {
             expect(await this.lp.balanceOf(this.carol.address)).to.equal("1000")
         })
 
+        it("fis should claim after claimableStartBLock", async function () {
+            this.fisDrop = await this.FISDrop.deploy(this.fis.address)
+            await this.fisDrop.deployed()
+            console.log("drop address",this.fisDrop.address)
+            console.log("fis address",this.fis.address)
+
+            await this.fis.connect(this.minter).transfer(this.fisDrop.address, "1000")
+            expect(await this.fis.balanceOf(this.fisDrop.address)).to.equal("1000")
 
 
+            const startBlock = "2000"
+            const rewardPerBlock = "10"
+            const totalReward = "1002"
+            const claimableStartBlock = "2020"
+            const lockedEndBlock = "2060"
+
+            await this.fisDrop.add(this.lp.address, startBlock, rewardPerBlock, totalReward, claimableStartBlock, lockedEndBlock)
+            await time.advanceBlockTo("1990")
+
+            await this.lp.connect(this.bob).approve(this.fisDrop.address, "1000")
+            await this.fisDrop.connect(this.bob).deposit(0, "100")
+            await time.advanceBlockTo("2019")
+            expect(await this.fisDrop.getUserCurrentTotalReward("0", this.bob.address)).to.equal("190")
+            let err
+            try {
+                await this.fisDrop.connect(this.bob).claimReward("0")
+            } catch (e) {
+                err = e
+            }
+            assert.equal(err.toString(), "Error: VM Exception while processing transaction: revert claimReward: not start")
+
+            await time.advanceBlockTo("2039")
+            expect(await this.fisDrop.getUserCurrentTotalReward("0", this.bob.address)).to.equal("390")
+            // expect(await this.fisDrop.getUserClaimableReward("0", this.bob.address)).to.equal("200")
+
+            await this.fisDrop.connect(this.bob).claimReward("0")
+            // expect(await this.fis.balanceOf(this.fisDrop.address)).to.equal("600")
+            expect(await this.fis.balanceOf(this.bob.address)).to.equal("200")
+
+            await time.advanceBlockTo("2059")
+            expect(await this.fisDrop.getUserCurrentTotalReward("0", this.bob.address)).to.equal("390")
+
+            await this.fisDrop.connect(this.bob).claimReward("0")
+            expect(await this.fis.balanceOf(this.bob.address)).to.equal("600")
+
+            await time.advanceBlockTo("2259")
+            expect(await this.fisDrop.getUserCurrentTotalReward("0", this.bob.address)).to.equal("402")
+
+
+            await this.fisDrop.connect(this.bob).claimReward("0")
+            // expect(await this.fis.balanceOf(this.bob.address)).to.equal("1002")
+
+            expect(await this.fis.balanceOf(this.fisDrop.address)).to.equal("0")
+
+        })
 
     })
 
