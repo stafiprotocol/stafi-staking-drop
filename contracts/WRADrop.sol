@@ -17,7 +17,6 @@ contract WRADrop is Ownable {
         uint256 rewardDebt; // Reward debt. See explanation below.
         uint256 claimedReward; // Reward that user has claimed
         uint256 currentTotalReward; // The amount minted by user but not yet claimed
-        uint256 lastClaimedRewardBlock; // The block where user last claimed the reward
     }
 
     // Info of each pool.
@@ -28,8 +27,6 @@ contract WRADrop is Ownable {
         uint256 rewardPerBlock;
         uint256 totalReward;
         uint256 leftReward;
-        uint256 claimableStartBlock;
-        uint256 lockedEndBlock;
         uint256 lastRewardBlock;
         uint256 rewardPerShare;
     }
@@ -55,13 +52,9 @@ contract WRADrop is Ownable {
         IERC20 _lpToken, 
         uint256 _startBlock, 
         uint256 _rewardPerBlock, 
-        uint256 _totalReward, 
-        uint256 _claimableStartBlock,
-        uint256 _lockedEndBlock
+        uint256 _totalReward
     ) public onlyOwner {
         require(_totalReward > _rewardPerBlock, "add: totalReward must be greater than rewardPerBlock");
-        require(_claimableStartBlock >= _startBlock, "add: claimableStartBlock must be greater than startBlock");
-        require(_lockedEndBlock > _claimableStartBlock, "add: lockedEndBlock must be greater than claimableStartBlock");
 
         uint256 lastRewardBlock = block.number > _startBlock ? block.number : _startBlock;
         poolInfo.push(PoolInfo({
@@ -71,8 +64,6 @@ contract WRADrop is Ownable {
             rewardPerBlock: _rewardPerBlock,
             totalReward: _totalReward,
             leftReward: _totalReward,
-            claimableStartBlock: _claimableStartBlock,
-            lockedEndBlock: _lockedEndBlock,
             lastRewardBlock: lastRewardBlock,
             rewardPerShare: 0
         }));
@@ -149,26 +140,18 @@ contract WRADrop is Ownable {
     function claimReward(uint256 _pid) public {
         PoolInfo storage pool = poolInfo[_pid];
         require(pool.emergencySwitch, "claimReward: emergencySwitch closed");
-        require(block.number > pool.claimableStartBlock, "claimReward: not start");
 
         deposit(_pid, 0);
 
         UserInfo storage user = userInfo[_pid][msg.sender];
         require(user.currentTotalReward > 0, "claimReward: no reward to claim");
 
-        uint256 currentClaimedReward = 0;
-        if (block.number >= pool.lockedEndBlock) {
-            currentClaimedReward = user.currentTotalReward;
-        } else {
-            uint256 lastClaimedRewardBlock = user.lastClaimedRewardBlock < pool.claimableStartBlock ? pool.claimableStartBlock : user.lastClaimedRewardBlock;
-            currentClaimedReward = user.currentTotalReward.mul(block.number.sub(lastClaimedRewardBlock)).div(pool.lockedEndBlock.sub(lastClaimedRewardBlock));
-        }
-
+        uint256 currentClaimedReward = user.currentTotalReward;
+        
         if (currentClaimedReward > 0) {
             safeTransferReward(msg.sender, currentClaimedReward);
             user.claimedReward = user.claimedReward.add(currentClaimedReward);
             user.currentTotalReward = user.currentTotalReward.sub(currentClaimedReward);
-            user.lastClaimedRewardBlock = block.number;
         }
 
         emit ClaimReward(msg.sender, _pid, currentClaimedReward);
@@ -204,8 +187,8 @@ contract WRADrop is Ownable {
     }
 
     function pendingReward(uint256 _pid, address _user) public view returns (uint256) {
-        PoolInfo storage pool = poolInfo[_pid];
-        UserInfo storage user = userInfo[_pid][_user];
+        PoolInfo memory pool = poolInfo[_pid];
+        UserInfo memory user = userInfo[_pid][_user];
         uint256 rewardPerShare = pool.rewardPerShare;
         uint256 lpSupply = pool.lpToken.balanceOf(address(this));
         if (block.number > pool.lastRewardBlock && lpSupply > 0) {
@@ -216,43 +199,26 @@ contract WRADrop is Ownable {
     }
 
     function getUserStakedAmount(uint _pid, address _user) public view returns (uint256) {
-        UserInfo storage user = userInfo[_pid][_user];
+        UserInfo memory user = userInfo[_pid][_user];
         return user.amount;
     }
 
     function getUserClaimableReward(uint _pid, address _user) public view returns (uint256) {
-        PoolInfo storage pool = poolInfo[_pid];
-        if (block.number <= pool.claimableStartBlock) {
-            return 0;
-        }
         uint256 pending = pendingReward(_pid, _user);
-        UserInfo storage user = userInfo[_pid][_user];
+        UserInfo memory user = userInfo[_pid][_user];
         uint256 totalReward = user.currentTotalReward.add(pending);
-        if (totalReward == 0) {
-            return 0;
-        }
-        if (block.number >= pool.lockedEndBlock) {
-            return totalReward;
-        }
-        uint256 lastClaimedRewardBlock = user.lastClaimedRewardBlock < pool.claimableStartBlock ? pool.claimableStartBlock : user.lastClaimedRewardBlock;
-
-        return totalReward.mul(block.number.sub(lastClaimedRewardBlock)).div(pool.lockedEndBlock.sub(lastClaimedRewardBlock));
+        return totalReward;
     }
 
     function getUserClaimedReward(uint _pid, address _user) public view returns (uint256) {
-        UserInfo storage user = userInfo[_pid][_user];
+        UserInfo memory user = userInfo[_pid][_user];
         return user.claimedReward;
     }
 
     function getUserCurrentTotalReward(uint _pid, address _user) public view returns (uint256) {
-        UserInfo storage user = userInfo[_pid][_user];
+        UserInfo memory user = userInfo[_pid][_user];
         uint256 pending = pendingReward(_pid, _user);
         return user.currentTotalReward.add(pending);
-    }
-
-    function getUserLastClaimedRewardBlock(uint _pid, address _user) public view returns (uint256) {
-        UserInfo storage user = userInfo[_pid][_user];
-        return user.lastClaimedRewardBlock;
     }
 
     function poolLength() external view returns (uint256) {
@@ -260,37 +226,27 @@ contract WRADrop is Ownable {
     }
 
     function getPoolLpTokenAddress(uint _pid) public view returns (address) {
-        PoolInfo storage pool = poolInfo[_pid];
+        PoolInfo memory pool = poolInfo[_pid];
         return address(pool.lpToken);
     }
 
     function getPoolLpSupply(uint _pid) public view returns (uint256) {
-        PoolInfo storage pool = poolInfo[_pid];
+        PoolInfo memory pool = poolInfo[_pid];
         return pool.lpToken.balanceOf(address(this));
     }
 
     function getPoolStartBlock(uint _pid) public view returns (uint256) {
-        PoolInfo storage pool = poolInfo[_pid];
+        PoolInfo memory pool = poolInfo[_pid];
         return pool.startBlock;
     }
 
     function getPoolRewardPerBlock(uint _pid) public view returns (uint256) {
-        PoolInfo storage pool = poolInfo[_pid];
+        PoolInfo memory pool = poolInfo[_pid];
         return pool.rewardPerBlock;
     }
 
     function getPoolTotalReward(uint _pid) public view returns (uint256) {
-        PoolInfo storage pool = poolInfo[_pid];
+        PoolInfo memory pool = poolInfo[_pid];
         return pool.totalReward;
-    }
-
-    function getPoolClaimableStartBlock(uint _pid) public view returns (uint256) {
-        PoolInfo storage pool = poolInfo[_pid];
-        return pool.claimableStartBlock;
-    }
-
-    function getPoolLockedEndBlock(uint _pid) public view returns (uint256) {
-        PoolInfo storage pool = poolInfo[_pid];
-        return pool.lockedEndBlock;
     }
 }
