@@ -170,7 +170,12 @@ contract WRADrop is Ownable {
         return _leftReward < amount ? _leftReward : amount;
     }
 
-    function pendingReward(uint256 _pid, address _user) public view returns (uint256) {
+    function getUserStakedAmount(uint _pid, address _user) public view returns (uint256) {
+        UserInfo memory user = userInfo[_pid][_user];
+        return user.amount;
+    }
+
+    function getUserClaimableReward(uint _pid, address _user) public view returns (uint256) {
         PoolInfo memory pool = poolInfo[_pid];
         UserInfo memory user = userInfo[_pid][_user];
         uint256 rewardPerShare = pool.rewardPerShare;
@@ -180,15 +185,6 @@ contract WRADrop is Ownable {
             rewardPerShare = rewardPerShare.add(reward.mul(1e12).div(stakeSupply));
         }
         return user.amount.mul(rewardPerShare).div(1e12).sub(user.rewardDebt);
-    }
-
-    function getUserStakedAmount(uint _pid, address _user) public view returns (uint256) {
-        UserInfo memory user = userInfo[_pid][_user];
-        return user.amount;
-    }
-
-    function getUserClaimableReward(uint _pid, address _user) public view returns (uint256) {
-        return pendingReward(_pid, _user);
     }
 
     function poolLength() external view returns (uint256) {
