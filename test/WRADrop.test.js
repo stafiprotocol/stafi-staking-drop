@@ -55,7 +55,7 @@ describe("WRADrop", function () {
             const rewardPerBlock = "10"
             const totalReward = "100"
 
-            this.wraDrop = await this.WRADrop.deploy(this.wraToken.address)
+            this.wraDrop = await this.WRADrop.deploy(this.wra.address)
             await this.wraDrop.deployed()
 
             await this.wraDrop.add(this.lp.address, startBlock, rewardPerBlock, totalReward)
@@ -72,11 +72,12 @@ describe("WRADrop", function () {
         })
 
         it("should give out wra only after startBock", async function () {
-            this.wraDrop = await this.WRADrop.deploy(this.wraToken.address)
+            this.wraDrop = await this.WRADrop.deploy(this.wra.address)
             await this.wraDrop.deployed()
             const startBlock = "100"
             const rewardPerBlock = "10"
             const totalReward = "100"
+            await this.wra.connect(this.minter).transfer(this.wraDrop.address, "200000")
 
             await this.wraDrop.add(this.lp.address, startBlock, rewardPerBlock, totalReward)
 
@@ -85,29 +86,31 @@ describe("WRADrop", function () {
             await time.advanceBlockTo("89")
 
             await this.wraDrop.connect(this.bob).deposit(0, "0") // block 90
-            expect(await this.wraDrop.getUserCurrentTotalReward("0", this.bob.address)).to.equal("0")
+            expect(await this.wraDrop.getUserClaimableReward("0", this.bob.address)).to.equal("0")
             await time.advanceBlockTo("94")
 
             await this.wraDrop.connect(this.bob).deposit(0, "0") // block 95
-            expect(await this.wraDrop.getUserCurrentTotalReward("0", this.bob.address)).to.equal("0")
+            expect(await this.wraDrop.getUserClaimableReward("0", this.bob.address)).to.equal("0")
             await time.advanceBlockTo("99")
 
             await this.wraDrop.connect(this.bob).deposit(0, "0") // block 100
-            expect(await this.wraDrop.getUserCurrentTotalReward("0", this.bob.address)).to.equal("0")
+            expect(await this.wraDrop.getUserClaimableReward("0", this.bob.address)).to.equal("0")
             await time.advanceBlockTo("100")
 
             await this.wraDrop.connect(this.bob).deposit(0, "0") // block 101
-            expect(await this.wraDrop.getUserCurrentTotalReward("0", this.bob.address)).to.equal("10")
+            expect(await this.wraDrop.getUserClaimableReward("0", this.bob.address)).to.equal("0")
+            expect(await this.wra.balanceOf(this.bob.address)).to.equal("10")
 
             await time.advanceBlockTo("104")
             await this.wraDrop.connect(this.bob).deposit(0, "0") // block 105
 
-            expect(await this.wraDrop.getUserCurrentTotalReward("0", this.bob.address)).to.equal("50")
+            expect(await this.wraDrop.getUserClaimableReward("0", this.bob.address)).to.equal("0")
+            expect(await this.wra.balanceOf(this.bob.address)).to.equal("50")
         })
 
 
         it("wra distribute amount should match totalReward", async function () {
-            this.wraDrop = await this.WRADrop.deploy(this.wraToken.address)
+            this.wraDrop = await this.WRADrop.deploy(this.wra.address)
             await this.wraDrop.deployed()
             const startBlock = "100"
             const rewardPerBlock = "10"
@@ -118,12 +121,12 @@ describe("WRADrop", function () {
             await this.lp.connect(this.bob).approve(this.wraDrop.address, "1000")
             await this.wraDrop.connect(this.bob).deposit(0, "100")
             await time.advanceBlockTo("189")
-            expect(await this.wraDrop.getUserCurrentTotalReward("0", this.bob.address)).to.equal("102")
+            expect(await this.wraDrop.getUserClaimableReward("0", this.bob.address)).to.equal("102")
         })
 
 
         it("should not distribute wra if no one deposit", async function () {
-            this.wraDrop = await this.WRADrop.deploy(this.wraToken.address)
+            this.wraDrop = await this.WRADrop.deploy(this.wra.address)
             await this.wraDrop.deployed()
             const startBlock = "200"
             const rewardPerBlock = "10"
@@ -139,11 +142,12 @@ describe("WRADrop", function () {
         })
 
         it("should distribute wra properly for each staker", async function () {
-            this.wraDrop = await this.WRADrop.deploy(this.wraToken.address)
+            this.wraDrop = await this.WRADrop.deploy(this.wra.address)
             await this.wraDrop.deployed()
             const startBlock = "300"
             const rewardPerBlock = "1000"
             const totalReward = "700000"
+            await this.wra.connect(this.minter).transfer(this.wraDrop.address, "200000")
 
             await this.wraDrop.add(this.lp.address, startBlock, rewardPerBlock, totalReward)
 
@@ -175,9 +179,10 @@ describe("WRADrop", function () {
             var pool = await this.wraDrop.poolInfo("0")
             expect(pool.leftReward).to.equal("690000")
 
-            expect(await this.wraDrop.getUserCurrentTotalReward("0", this.alice.address)).to.equal("5666")
-            expect(await this.wraDrop.getUserCurrentTotalReward("0", this.bob.address)).to.equal("3333")
-            expect(await this.wraDrop.getUserCurrentTotalReward("0", this.carol.address)).to.equal("1000")
+            expect(await this.wra.balanceOf(this.alice.address)).to.equal("5666")
+            expect(await this.wraDrop.getUserClaimableReward("0", this.alice.address)).to.equal("0")
+            expect(await this.wraDrop.getUserClaimableReward("0", this.bob.address)).to.equal("3333")
+            expect(await this.wraDrop.getUserClaimableReward("0", this.carol.address)).to.equal("1000")
             // Bob withdraws 5 LPs at block 330. At this point:
             // Alice should have: 4*1000 + 4*1/3*1000 + 2*1/6*1000 +10*2/7*1000= 8523
             // Bob should have: 4*2/3*1000 + 2*2/6*1000 + 10*2/7*1000 = 6190
@@ -187,9 +192,11 @@ describe("WRADrop", function () {
             pool = await this.wraDrop.poolInfo("0")
             expect(pool.leftReward).to.equal("680000")
 
-            expect(await this.wraDrop.getUserCurrentTotalReward("0", this.alice.address)).to.equal("8523")
-            expect(await this.wraDrop.getUserCurrentTotalReward("0", this.bob.address)).to.equal("6190")
-            expect(await this.wraDrop.getUserCurrentTotalReward("0", this.carol.address)).to.equal("5286")
+            expect(await this.wraDrop.getUserClaimableReward("0", this.alice.address)).to.equal("2857")
+            expect(await this.wraDrop.getUserClaimableReward("0", this.bob.address)).to.equal("0")
+            expect(await this.wra.balanceOf(this.bob.address)).to.equal("6190")
+
+            expect(await this.wraDrop.getUserClaimableReward("0", this.carol.address)).to.equal("5286")
             // Alice withdraws 20 LPs at block 340.
             // Bob withdraws 15 LPs at block 350.
             // Carol withdraws 30 LPs at block 360.
@@ -203,11 +210,14 @@ describe("WRADrop", function () {
             pool = await this.wraDrop.poolInfo("0")
             expect(pool.leftReward).to.equal("650000")
             // Alice should have: 5666 + 10*2/7*1000 + 10*2/6.5*1000 = 11600
-            expect(await this.wraDrop.getUserCurrentTotalReward("0", this.alice.address)).to.equal("11600")
+            expect(await this.wraDrop.getUserClaimableReward("0", this.alice.address)).to.equal("0")
+            expect(await this.wra.balanceOf(this.alice.address)).to.equal("11600")
             // Bob should have: 6190 + 10*1.5/6.5 * 1000 + 10*1.5/4.5*1000 = 11831
-            expect(await this.wraDrop.getUserCurrentTotalReward("0", this.bob.address)).to.equal("11831")
+            expect(await this.wraDrop.getUserClaimableReward("0", this.bob.address)).to.equal("0")
+            expect(await this.wra.balanceOf(this.bob.address)).to.equal("11831")
             // Carol should have: 2*3/6*1000 + 10*3/7*1000 + 10*3/6.5*1000 + 10*3/4.5*1000 + 10*1000 = 26568
-            expect(await this.wraDrop.getUserCurrentTotalReward("0", this.carol.address)).to.equal("26568")
+            expect(await this.wraDrop.getUserClaimableReward("0", this.carol.address)).to.equal("0")
+            expect(await this.wra.balanceOf(this.carol.address)).to.equal("26568")
             // All of them should have 1000 LPs back.
             expect(await this.lp.balanceOf(this.alice.address)).to.equal("1000")
             expect(await this.lp.balanceOf(this.bob.address)).to.equal("1000")
@@ -235,10 +245,10 @@ describe("WRADrop", function () {
             await this.lp.connect(this.bob).approve(this.wraDrop.address, "1000")
             await this.wraDrop.connect(this.bob).deposit(0, "100")
             await time.advanceBlockTo("2019")
-            expect(await this.wraDrop.getUserCurrentTotalReward("0", this.bob.address)).to.equal("190")
+            expect(await this.wraDrop.getUserClaimableReward("0", this.bob.address)).to.equal("190")
 
             await time.advanceBlockTo("2039")
-            expect(await this.wraDrop.getUserCurrentTotalReward("0", this.bob.address)).to.equal("390")
+            expect(await this.wraDrop.getUserClaimableReward("0", this.bob.address)).to.equal("390")
             // expect(await this.wraDrop.getUserClaimableReward("0", this.bob.address)).to.equal("200")
 
             await this.wraDrop.connect(this.bob).claimReward("0")
@@ -246,13 +256,13 @@ describe("WRADrop", function () {
             expect(await this.wra.balanceOf(this.bob.address)).to.equal("400")
 
             await time.advanceBlockTo("2059")
-            expect(await this.wraDrop.getUserCurrentTotalReward("0", this.bob.address)).to.equal("190")
+            expect(await this.wraDrop.getUserClaimableReward("0", this.bob.address)).to.equal("190")
 
             await this.wraDrop.connect(this.bob).claimReward("0")
             expect(await this.wra.balanceOf(this.bob.address)).to.equal("600")
 
             await time.advanceBlockTo("2259")
-            expect(await this.wraDrop.getUserCurrentTotalReward("0", this.bob.address)).to.equal("402")
+            expect(await this.wraDrop.getUserClaimableReward("0", this.bob.address)).to.equal("402")
 
 
             await this.wraDrop.connect(this.bob).claimReward("0")
