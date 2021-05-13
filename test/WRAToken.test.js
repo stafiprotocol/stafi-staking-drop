@@ -14,7 +14,7 @@ describe("WRAToken", function () {
         this.eco = this.signers[5]
 
         this.WRAToken = await ethers.getContractFactory("WRAToken")
-        this.wra = await this.WRAToken.deploy(100,this.genesis.address, this.stake.address,
+        this.wra = await this.WRAToken.deploy(100, this.genesis.address, this.stake.address,
             this.wrapfi.address, this.dev.address, this.eco.address)
 
         await this.wra.deployed()
@@ -22,19 +22,20 @@ describe("WRAToken", function () {
     it("should set correct state variables", async function () {
         expect(await this.wra.startAtBlock()).to.equal("1")
         expect(await this.wra.balanceOf(this.genesis.address)).to.equal("10000000000000000000000000");
-        expect(await this.wra.balanceOf(this.stake.address)).to.equal("6000000000000000000000000");
-        expect(await this.wra.balanceOf(this.wrapfi.address)).to.equal("28000000000000000000000000");
-        expect(await this.wra.balanceOf(this.dev.address)).to.equal("4000000000000000000000000");
-        expect(await this.wra.balanceOf(this.eco.address)).to.equal("2000000000000000000000000");
+        expect(await this.wra.balanceOf(this.owner.address)).to.equal("90000000000000000000000000");
+        expect(await this.wra.balanceOf(this.stake.address)).to.equal("0");
+        expect(await this.wra.balanceOf(this.wrapfi.address)).to.equal("0");
+        expect(await this.wra.balanceOf(this.dev.address)).to.equal("0");
+        expect(await this.wra.balanceOf(this.eco.address)).to.equal("0");
 
-        expect(await this.wra.totalSupply()).to.equal("50000000000000000000000000");
+        expect(await this.wra.totalSupply()).to.equal("100000000000000000000000000");
 
     })
     it("should not mint other than owner", async function () {
 
         let err
         try {
-            await this.wra.connect(this.genesis).mintForStakingReserve()
+            await this.wra.connect(this.genesis).unLockForStakingReserve()
         } catch (e) {
             err = e
         }
@@ -43,82 +44,52 @@ describe("WRAToken", function () {
 
         err = ""
         try {
-            await this.wra.connect(this.admin).mintForGenesisLaunch()
+            await this.wra.connect(this.owner).unLockFor()
         } catch (e) {
             err = e
         }
-        assert.equal(err.toString(), "TypeError: this.wra.connect(...).mintForGenesisLaunch is not a function")
+        assert.equal(err.toString(), "TypeError: this.wra.connect(...).unLockFor is not a function")
 
 
     })
 
 
-    it("should not mint second in one year", async function () {
-        let err
-        try {
-            await this.wra.connect(this.owner).mintForStakingReserve()
-        } catch (e) {
-            err = e
-        }
-        assert.equal(err.toString(), "Error: VM Exception while processing transaction: revert has mint this year")
+    it("should not unlock before one year", async function () {
 
-        err = ""
-        try {
-            await this.wra.connect(this.owner).mintForWrapFiUsers()
-        } catch (e) {
-            err = e
-        }
-        assert.equal(err.toString(), "Error: VM Exception while processing transaction: revert has mint this year")
-
-        err = ""
-        try {
-            await this.wra.connect(this.owner).mintForDevFund()
-        } catch (e) {
-            err = e
-        }
-        assert.equal(err.toString(), "Error: VM Exception while processing transaction: revert has mint this year")
-
-        err = ""
-        try {
-            await this.wra.connect(this.owner).mintForEcoFund()
-        } catch (e) {
-            err = e
-        }
-        assert.equal(err.toString(), "Error: VM Exception while processing transaction: revert has mint this year")
+        await this.wra.connect(this.owner).unLockForStakingReserve()
+        await this.wra.connect(this.owner).unLockForWrapFiUsers()
+        await this.wra.connect(this.owner).unLockForDevFund()
+        await this.wra.connect(this.owner).unLockForEcoFund()
+        expect(await this.wra.balanceOf(this.stake.address)).to.equal("0");
+        expect(await this.wra.balanceOf(this.wrapfi.address)).to.equal("0");
+        expect(await this.wra.balanceOf(this.dev.address)).to.equal("0");
+        expect(await this.wra.balanceOf(this.eco.address)).to.equal("0");
 
     })
 
-    it("should  mint in new year", async function () {
-        this.timeout(10000);
+    it("should  unlock after one year", async function () {
 
         await time.advanceBlockTo("100");
-        await this.wra.connect(this.owner).mintForStakingReserve();//block 101
-        expect(await this.wra.balanceOf(this.stake.address)).to.equal("10500000000000000000000000");
+        await this.wra.connect(this.owner).unLockForStakingReserve();//block 101
+        expect(await this.wra.balanceOf(this.stake.address)).to.equal("6000000000000000000000000");
 
-        await time.advanceBlockTo("200");
-        await this.wra.connect(this.owner).mintForStakingReserve();//block 201
-        expect(await this.wra.balanceOf(this.stake.address)).to.equal("13500000000000000000000000");
+        // await time.advanceBlockTo("200");
+        // await this.wra.connect(this.owner).mintForStakingReserve();//block 201
+        // expect(await this.wra.balanceOf(this.stake.address)).to.equal("10500000000000000000000000");
 
-        await time.advanceBlockTo("300");
-        await this.wra.connect(this.owner).mintForStakingReserve();//block 301
-        expect(await this.wra.balanceOf(this.stake.address)).to.equal("15000000000000000000000000");
+        // await time.advanceBlockTo("300");
+        // await this.wra.connect(this.owner).unLockForStakingReserve();//block 301
+        // expect(await this.wra.balanceOf(this.stake.address)).to.equal("13500000000000000000000000");
 
         await time.advanceBlockTo("400");
-
-        
-        err = ""
-        try {
-            await this.wra.connect(this.owner).mintForStakingReserve();//block 401
-        } catch (e) {
-            err = e
-        }
-        assert.equal(err.toString(), "Error: VM Exception while processing transaction: revert unlock year reach limit")
-
+        await this.wra.connect(this.owner).unLockForStakingReserve();//block 401
+        expect(await this.wra.balanceOf(this.stake.address)).to.equal("15000000000000000000000000");
     })
 
     it("should  transfer", async function () {
-        await this.wra.connect(this.dev).transfer(this.genesis.address, '1000000000000000000000000', { from: this.dev.address })
-        expect(await this.wra.balanceOf(this.genesis.address)).to.equal("11000000000000000000000000");
-        expect(await this.wra.balanceOf(this.dev.address)).to.equal("3000000000000000000000000");
+    
+        await this.wra.connect(this.genesis).transfer(this.dev.address, '1000000000000000000000000')
+        expect(await this.wra.balanceOf(this.genesis.address)).to.equal("9000000000000000000000000");
+        expect(await this.wra.balanceOf(this.dev.address)).to.equal("1000000000000000000000000");
     })
 })

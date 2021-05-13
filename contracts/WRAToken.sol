@@ -12,17 +12,14 @@ contract WRAToken is ERC20("WrapFi", "WRA"), Ownable {
     uint256 public NUMBER_BLOCKS_PER_YEAR;
     uint256 public startAtBlock;
 
-    uint256 public maxTotalSupply = 100000000e18;
-    uint256 public genesisLaunchRatio = 10;
-
     address public genesisLaunchAddress;
     address public stakingReserveAddress;
     address public wrapFiUsersAddress;
     address public devFundAddress;
     address public ecoFundAddress;
 
-    mapping (address => mapping (uint256 => bool)) public mintResult;
-    mapping (address => mapping (uint256 => uint256)) public mintInfo;
+    mapping (address => mapping (uint256 => bool)) public unLockResult;
+    mapping (address => mapping (uint256 => uint256)) public unLockInfo;
 
     constructor(
         uint256 _numberBlocksPerYear,
@@ -38,64 +35,64 @@ contract WRAToken is ERC20("WrapFi", "WRA"), Ownable {
         devFundAddress = _devFundAddress;
         ecoFundAddress = _ecoFundAddress;
         startAtBlock = block.number;
-        initMintInfo();
-        mintForGenesisLaunch();
-        mintForStakingReserve();
-        mintForWrapFiUsers();
-        mintForDevFund();
-        mintForEcoFund();
+        initUnLockInfo();
+        _mint(msg.sender,90000000e18);
+        _mint(genesisLaunchAddress, 10000000e18);
     }
 
-    function initMintInfo() internal {
-        mintInfo[stakingReserveAddress][0] = 60;
-        mintInfo[stakingReserveAddress][1] = 45;
-        mintInfo[stakingReserveAddress][2] = 30;
-        mintInfo[stakingReserveAddress][3] = 15;
+    function initUnLockInfo() internal {
+        unLockInfo[stakingReserveAddress][1] = 60;
+        unLockInfo[stakingReserveAddress][2] = 45;
+        unLockInfo[stakingReserveAddress][3] = 30;
+        unLockInfo[stakingReserveAddress][4] = 15;
 
-        mintInfo[wrapFiUsersAddress][0] = 280;
-        mintInfo[wrapFiUsersAddress][1] = 210;
-        mintInfo[wrapFiUsersAddress][2] = 140;
-        mintInfo[wrapFiUsersAddress][3] = 70;
+        unLockInfo[wrapFiUsersAddress][1] = 280;
+        unLockInfo[wrapFiUsersAddress][2] = 210;
+        unLockInfo[wrapFiUsersAddress][3] = 140;
+        unLockInfo[wrapFiUsersAddress][4] = 70;
 
-        mintInfo[devFundAddress][0] = 40;
-        mintInfo[devFundAddress][1] = 30;
-        mintInfo[devFundAddress][2] = 20;
-        mintInfo[devFundAddress][3] = 10;
+        unLockInfo[devFundAddress][1] = 40;
+        unLockInfo[devFundAddress][2] = 30;
+        unLockInfo[devFundAddress][3] = 20;
+        unLockInfo[devFundAddress][4] = 10;
 
-        mintInfo[ecoFundAddress][0] = 20;
-        mintInfo[ecoFundAddress][1] = 15;
-        mintInfo[ecoFundAddress][2] = 10;
-        mintInfo[ecoFundAddress][3] = 5;
+        unLockInfo[ecoFundAddress][1] = 20;
+        unLockInfo[ecoFundAddress][2] = 15;
+        unLockInfo[ecoFundAddress][3] = 10;
+        unLockInfo[ecoFundAddress][4] = 5;
     }
 
-    function mintForGenesisLaunch() private {
-        uint256 amount = maxTotalSupply.mul(genesisLaunchRatio).div(100);
-        _mint(genesisLaunchAddress, amount);
+    function unLockForStakingReserve() public onlyOwner {
+        unLockFor(stakingReserveAddress);
     }
 
-    function mintForStakingReserve() public onlyOwner {
-        mintFor(stakingReserveAddress);
+    function unLockForWrapFiUsers() public onlyOwner {
+        unLockFor(wrapFiUsersAddress);
     }
 
-    function mintForWrapFiUsers() public onlyOwner {
-        mintFor(wrapFiUsersAddress);
+    function unLockForDevFund() public onlyOwner {
+        unLockFor(devFundAddress);
     }
 
-    function mintForDevFund() public onlyOwner {
-        mintFor(devFundAddress);
+    function unLockForEcoFund() public onlyOwner {
+        unLockFor(ecoFundAddress);
     }
 
-    function mintForEcoFund() public onlyOwner {
-        mintFor(ecoFundAddress);
-    }
-
-    function mintFor(address _to) private {
+    function unLockFor(address _to) private {
         uint256 blockNow = block.number;
         uint256 yearNow = blockNow.sub(startAtBlock).div(NUMBER_BLOCKS_PER_YEAR);
-        require(yearNow < 4, "unlock year reach limit");
-        require(!mintResult[_to][yearNow], "has mint this year");
-
-        mintResult[_to][yearNow] = true;
-        _mint(_to, maxTotalSupply.mul(mintInfo[_to][yearNow]).div(1000));
+        uint256 amount;
+        for (uint256 i = 1; i < 5; i++) {
+            if (i > yearNow) {
+                break;
+            }
+            if (!unLockResult[_to][i]) {
+                amount = amount.add(totalSupply().mul(unLockInfo[_to][i]).div(1000));
+                unLockResult[_to][i] = true;
+            }
+        }
+        if (amount > 0){
+            transfer(_to,amount);
+        }
     }
 }

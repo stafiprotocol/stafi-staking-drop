@@ -10,6 +10,7 @@ describe("WRADrop", function () {
         this.carol = this.signers[2]
         this.dev = this.signers[3]
         this.minter = this.signers[4]
+        this.cool = this.signers[5]
 
         this.WRADrop = await ethers.getContractFactory("WRADrop")
         this.WRAToken = await ethers.getContractFactory("WRAToken")
@@ -17,7 +18,8 @@ describe("WRADrop", function () {
     })
 
     beforeEach(async function () {
-        this.wraToken = await this.WRAToken.deploy()
+        this.wraToken = await this.WRAToken.deploy(100,this.bob.address,this.carol.address,
+            this.dev.address,this.minter.address,this.cool.address)
         await this.wraToken.deployed()
 
     })

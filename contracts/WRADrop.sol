@@ -5,7 +5,6 @@ pragma solidity 0.6.12;
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
-import "./WRAToken.sol";
 
 contract WRADrop is Ownable {
     using SafeMath for uint256;
@@ -29,7 +28,7 @@ contract WRADrop is Ownable {
         uint256 rewardPerShare;
     }
 
-    WRAToken public WRA;
+    address public WRA;
 
     // All pools.
     PoolInfo[] public poolInfo;
@@ -40,7 +39,7 @@ contract WRADrop is Ownable {
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
     event EmergencyWithdraw(address indexed user, uint256 indexed pid, uint256 amount);
 
-    constructor(WRAToken _WRA) public {
+    constructor(address _WRA) public {
         WRA = _WRA;
     }
 
@@ -142,11 +141,11 @@ contract WRADrop is Ownable {
     }
 
     function safeTransferReward(address _to, uint256 _amount) internal {
-        uint256 bal = WRA.balanceOf(address(this));
+        uint256 bal = IERC20(WRA).balanceOf(address(this));
         if (_amount > bal) {
-            WRA.transfer(_to, bal);
+            IERC20(WRA).safeTransfer(_to, bal);
         } else {
-            WRA.transfer(_to, _amount);
+            IERC20(WRA).safeTransfer(_to, _amount);
         }
     }
 
