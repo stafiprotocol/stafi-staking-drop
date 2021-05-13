@@ -5,6 +5,7 @@ pragma solidity 0.6.12;
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+import "@openzeppelin/contracts/cryptography/MerkleProof.sol";
 
 contract WRADrop is Ownable {
     using SafeMath for uint256;
@@ -29,15 +30,23 @@ contract WRADrop is Ownable {
     }
 
     address public WRA;
+    bytes32 public merkleRoot;
+    uint256 public claimRound;
+    bool public claimOpen;
 
     // All pools.
     PoolInfo[] public poolInfo;
     // Info of each user that stakes stake tokens. pid => user address => info
     mapping (uint256 => mapping (address => UserInfo)) public userInfo;
 
+    // This is a packed array of booleans.
+    mapping (uint256 => mapping (uint256 => uint256)) private claimedBitMap;
+
     event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
     event EmergencyWithdraw(address indexed user, uint256 indexed pid, uint256 amount);
+    // This event is triggered whenever a call to #claim succeeds.
+    event Claimed(uint256 round, uint256 index, address account, uint256 amount);
 
     constructor(address _WRA) public {
         WRA = _WRA;
@@ -213,5 +222,49 @@ contract WRADrop is Ownable {
     function getPoolTotalReward(uint _pid) public view returns (uint256) {
         PoolInfo memory pool = poolInfo[_pid];
         return pool.totalReward;
+    }
+
+
+
+    function setMerkleRoot(bytes32 _merkleRoot) public onlyOwner {
+        merkleRoot = _merkleRoot;
+        claimRound = claimRound.add(1);
+    }
+
+    function openClaim() public onlyOwner {
+        claimOpen = true;
+    }
+    
+    function closeClaim() public onlyOwner {
+        claimOpen = false;
+    }
+
+    function isClaimed(uint256 index) public view returns (bool) {
+        uint256 claimedWordIndex = index / 256;
+        uint256 claimedBitIndex = index % 256;
+        uint256 claimedWord = claimedBitMap[claimRound][claimedWordIndex];
+        uint256 mask = (1 << claimedBitIndex);
+        return claimedWord & mask == mask;
+    }
+
+    function _setClaimed(uint256 index) private {
+        uint256 claimedWordIndex = index / 256;
+        uint256 claimedBitIndex = index % 256;
+        claimedBitMap[claimRound][claimedWordIndex] = claimedBitMap[claimRound][claimedWordIndex] | (1 << claimedBitIndex);
+    }
+
+    function claim(uint256 index, address account, uint256 amount, bytes32[] calldata merkleProof) external {
+        require(!isClaimed(index), 'MerkleDistributor: Drop already claimed.');
+        require(claimOpen, "claim not open");
+
+        // Verify the merkle proof.
+        bytes32 node = keccak256(abi.encodePacked(index, account, amount));
+        require(MerkleProof.verify(merkleProof, merkleRoot, node), 'MerkleDistributor: Invalid proof.');
+
+        // Mark it claimed and send the token.
+        _setClaimed(index);
+        require(IERC20(WRA).transfer(account, amount), 'MerkleDistributor: Transfer failed.');
+
+        emit Claimed(claimRound, index, account, amount);
     }
 }
