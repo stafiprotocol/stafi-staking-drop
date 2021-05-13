@@ -28,7 +28,7 @@ contract WRAToken is ERC20("WrapFi", "WRA"), Ownable {
         address _wrapFiUsersAddress,
         address _devFundAddress,
         address _ecoFundAddress) public {
-        NUMBER_BLOCKS_PER_YEAR = _numberBlocksPerYear > 0 ? _numberBlocksPerYear : 2102400;
+        NUMBER_BLOCKS_PER_YEAR = _numberBlocksPerYear > 0 ? _numberBlocksPerYear : 2254114;
         genesisLaunchAddress = _genesisLaunchAddress;
         stakingReserveAddress = _stakingReserveAddress;
         wrapFiUsersAddress = _wrapFiUsersAddress;
