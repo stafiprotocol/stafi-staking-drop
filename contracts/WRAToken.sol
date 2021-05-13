@@ -36,7 +36,7 @@ contract WRAToken is ERC20("WrapFi", "WRA"), Ownable {
         ecoFundAddress = _ecoFundAddress;
         startAtBlock = block.number;
         initUnLockInfo();
-        _mint(msg.sender,90000000e18);
+        _mint(msg.sender, 90000000e18);
         _mint(genesisLaunchAddress, 10000000e18);
     }
 
@@ -92,7 +92,7 @@ contract WRAToken is ERC20("WrapFi", "WRA"), Ownable {
             }
         }
         if (amount > 0){
-            transfer(_to,amount);
+            transfer(_to, amount);
         }
     }
 }
