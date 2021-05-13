@@ -151,11 +151,8 @@ contract WRADrop is Ownable {
 
     function safeTransferReward(address _to, uint256 _amount) internal {
         uint256 bal = IERC20(WRA).balanceOf(address(this));
-        if (_amount > bal) {
-            IERC20(WRA).safeTransfer(_to, bal);
-        } else {
-            IERC20(WRA).safeTransfer(_to, _amount);
-        }
+        require(bal >= _amount, "safeTransferReward: balance not enough");
+        IERC20(WRA).safeTransfer(_to, _amount);
     }
 
     // Withdraw without caring about rewards. EMERGENCY ONLY.
@@ -234,7 +231,7 @@ contract WRADrop is Ownable {
     function openClaim() public onlyOwner {
         claimOpen = true;
     }
-    
+
     function closeClaim() public onlyOwner {
         claimOpen = false;
     }
@@ -254,8 +251,8 @@ contract WRADrop is Ownable {
     }
 
     function claim(uint256 index, address account, uint256 amount, bytes32[] calldata merkleProof) external {
-        require(!isClaimed(index), 'MerkleDistributor: Drop already claimed.');
-        require(claimOpen, "claim not open");
+        require(!isClaimed(index), 'claim: already claimed.');
+        require(claimOpen, "claim: claim not open");
 
         // Verify the merkle proof.
         bytes32 node = keccak256(abi.encodePacked(index, account, amount));
