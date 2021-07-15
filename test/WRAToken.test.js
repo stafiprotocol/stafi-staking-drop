@@ -81,7 +81,7 @@ describe("WRAToken", function () {
         // await this.wra.connect(this.owner).unLockForStakingReserve();//block 301
         // expect(await this.wra.balanceOf(this.stake.address)).to.equal("13500000000000000000000000");
 
-        await time.advanceBlockTo("400");
+        await time.advanceBlockTo("800");
         await this.wra.connect(this.owner).unLockForStakingReserve();//block 401
         expect(await this.wra.balanceOf(this.stake.address)).to.equal("15000000000000000000000000");
     })

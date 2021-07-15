@@ -2,6 +2,8 @@ const { ethers } = require("hardhat")
 const { expect, assert } = require("chai")
 const { time } = require("./utilities")
 
+
+const ZERO_BYTES32 = '0x0000000000000000000000000000000000000000000000000000000000000000'
 describe("WRADrop", function () {
     before(async function () {
         this.signers = await ethers.getSigners()
@@ -18,8 +20,8 @@ describe("WRADrop", function () {
     })
 
     beforeEach(async function () {
-        this.wraToken = await this.WRAToken.deploy(100,this.bob.address,this.carol.address,
-            this.dev.address,this.minter.address,this.cool.address)
+        this.wraToken = await this.WRAToken.deploy(100, this.bob.address, this.carol.address,
+            this.dev.address, this.minter.address, this.cool.address)
         await this.wraToken.deployed()
 
     })
@@ -229,8 +231,8 @@ describe("WRADrop", function () {
         it("wra should claim after claimableStartBLock", async function () {
             this.wraDrop = await this.WRADrop.deploy(this.wra.address)
             await this.wraDrop.deployed()
-            console.log("drop address",this.wraDrop.address)
-            console.log("wra address",this.wra.address)
+            console.log("drop address", this.wraDrop.address)
+            console.log("wra address", this.wra.address)
 
             await this.wra.connect(this.minter).transfer(this.wraDrop.address, "200000")
             expect(await this.wra.balanceOf(this.wraDrop.address)).to.equal("200000")
@@ -239,7 +241,7 @@ describe("WRADrop", function () {
             const startBlock = "2000"
             const rewardPerBlock = "10"
             const totalReward = "1002"
-            
+
 
             await this.wraDrop.add(this.lp.address, startBlock, rewardPerBlock, totalReward)
             await time.advanceBlockTo("1990")
@@ -272,6 +274,21 @@ describe("WRADrop", function () {
 
             expect(await this.wra.balanceOf(this.wraDrop.address)).to.equal("198998")
 
+        })
+
+        it("returns the zero merkle root", async function () {
+            expect(await this.wraDrop.merkleRoot()).to.eq(ZERO_BYTES32)
+        })
+
+        it('fails for empty proof', async function () {
+            await this.wraDrop.openClaim();
+            err = ""
+            try {
+                await this.wraDrop.claim(0, this.bob.address, 10, [])
+            } catch (e) {
+                err = e
+            }
+            assert.equal(err.toString(), 'Error: VM Exception while processing transaction: revert MerkleDistributor: Invalid proof.')
         })
 
     })
