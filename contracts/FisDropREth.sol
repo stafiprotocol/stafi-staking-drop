@@ -6,8 +6,12 @@ import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/cryptography/MerkleProof.sol";
+import "@openzeppelin/contracts/utils/EnumerableSet.sol";
+import "./utils/SafeCast.sol";
 
 contract FisDropREth is Ownable {
+    using SafeCast for *;
+    using EnumerableSet for EnumerableSet.AddressSet;
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
@@ -15,28 +19,140 @@ contract FisDropREth is Ownable {
     bytes32 public merkleRoot;
     uint256 public claimRound;
     bool public claimOpen;
-
     // This is a packed array of booleans.
     mapping (uint256 => mapping (uint256 => uint256)) private claimedBitMap;
     // This event is triggered whenever a call to #claim succeeds.
     event Claimed(uint256 round, uint256 index, address account, uint256 amount);
 
-    constructor(address _FIS) public {
+
+    //dropper
+    enum ProposalStatus {Inactive, Active, Executed}
+
+    struct Proposal {
+        ProposalStatus _status;
+        uint40 _yesVotes;      // bitmap, 40 maximum votes
+        uint8 _yesVotesTotal;
+    }
+    mapping(bytes32 => Proposal) public _proposals;
+    uint8   public _threshold;
+
+    EnumerableSet.AddressSet droppers;
+    modifier onlyDropper{
+        require(droppers.contains(msg.sender));
+        _;
+    }
+    function addDropper(address dropper) public onlyOwner{
+        droppers.add(dropper);
+    }
+    
+    function removeDropper(address dropper) public onlyOwner{
+        droppers.remove(dropper);
+    }
+
+    function getDropperIndex(address dropper) public view returns (uint256) {
+        return droppers._inner._indexes[bytes32(uint256(dropper))];
+    }
+    
+    function dropperBit(address dropper) private view returns(uint) {
+        return uint(1) << getDropperIndex(dropper).sub(1);
+    }
+
+    function _hasVoted(Proposal memory proposal, address dropper) private view returns(bool) {
+        return (dropperBit(dropper) & uint(proposal._yesVotes)) > 0;
+    }
+
+    function changeThreshold(uint256 newThreshold) external onlyOwner {
+        _threshold = newThreshold.toUint8();
+    }
+
+    constructor(address _FIS, address[] memory initialDroppers, uint256 initialThreshold) public {
         FIS = _FIS;
+        _threshold = initialThreshold.toUint8();
+        uint256 initialDropperCount = initialDroppers.length;
+        for (uint256 i; i < initialDropperCount; i++) {
+            droppers.add(initialDroppers[i]);
+        }
     }
 
-    function setMerkleRoot(bytes32 _merkleRoot) public onlyOwner {
-        merkleRoot = _merkleRoot;
-        claimRound = claimRound.add(1);
-        claimOpen = true;
+    function setMerkleRoot(uint256 newRound, bytes32 _merkleRoot) public onlyDropper {
+        require(newRound == claimRound.add(1), "newRound != claimRound+1");
+        bytes32 dataHash = keccak256(abi.encodePacked(newRound, _merkleRoot));
+        Proposal memory proposal = _proposals[dataHash];
+
+        require(uint(proposal._status) <= 1, "proposal already executed/cancelled");
+        require(!_hasVoted(proposal, msg.sender), "relayer already voted");
+        
+        if (proposal._status == ProposalStatus.Inactive) {
+            proposal = Proposal({
+                    _status : ProposalStatus.Active,
+                    _yesVotes : 0,
+                    _yesVotesTotal : 0
+                });
+        }
+        proposal._yesVotes = (proposal._yesVotes | dropperBit(msg.sender)).toUint40();
+        proposal._yesVotesTotal++; 
+
+        // Finalize if Threshold has been reached
+        if (proposal._yesVotesTotal >= _threshold) {
+            proposal._status = ProposalStatus.Executed;
+            
+            merkleRoot = _merkleRoot;
+            claimRound = claimRound.add(1);
+            claimOpen = true;
+        }
+        _proposals[dataHash] = proposal;
     }
 
-    function openClaim() public onlyOwner {
-        claimOpen = true;
+    function openClaim(uint256 round) public onlyDropper {
+        require(round == claimRound, "round != claimRound");
+        bytes32 dataHash = keccak256(abi.encodePacked("open", round));
+        Proposal memory proposal = _proposals[dataHash];
+
+        require(uint(proposal._status) <= 1, "proposal already executed/cancelled");
+        require(!_hasVoted(proposal, msg.sender), "relayer already voted");
+        
+        if (proposal._status == ProposalStatus.Inactive) {
+            proposal = Proposal({
+                    _status : ProposalStatus.Active,
+                    _yesVotes : 0,
+                    _yesVotesTotal : 0
+                });
+        }
+        proposal._yesVotes = (proposal._yesVotes | dropperBit(msg.sender)).toUint40();
+        proposal._yesVotesTotal++; 
+
+        // Finalize if Threshold has been reached
+        if (proposal._yesVotesTotal >= _threshold) {
+            proposal._status = ProposalStatus.Executed;
+            claimOpen = true;
+        }
+        _proposals[dataHash] = proposal;
     }
 
-    function closeClaim() public onlyOwner {
-        claimOpen = false;
+    function closeClaim(uint256 round) public onlyDropper {
+        require(round == claimRound, "round != claimRound");
+        bytes32 dataHash = keccak256(abi.encodePacked("close", round));
+        Proposal memory proposal = _proposals[dataHash];
+
+        require(uint(proposal._status) <= 1, "proposal already executed/cancelled");
+        require(!_hasVoted(proposal, msg.sender), "relayer already voted");
+
+        if (proposal._status == ProposalStatus.Inactive) {
+            proposal = Proposal({
+                    _status : ProposalStatus.Active,
+                    _yesVotes : 0,
+                    _yesVotesTotal : 0
+                });
+        }
+        proposal._yesVotes = (proposal._yesVotes | dropperBit(msg.sender)).toUint40();
+        proposal._yesVotesTotal++; 
+
+        // Finalize if Threshold has been reached
+        if (proposal._yesVotesTotal >= _threshold) {
+            proposal._status = ProposalStatus.Executed;
+            claimOpen = false;
+        }
+        _proposals[dataHash] = proposal;
     }
 
     function isClaimed(uint256 round, uint256 index) public view returns (bool) {
