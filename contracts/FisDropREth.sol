@@ -21,6 +21,7 @@ contract FisDropREth is Ownable {
     bool public claimOpen;
     // This is a packed array of booleans.
     mapping (uint256 => mapping (uint256 => uint256)) private claimedBitMap;
+    mapping (bytes32 => bool) public dateDrop;
     // This event is triggered whenever a call to #claim succeeds.
     event Claimed(uint256 round, uint256 index, address account, uint256 amount);
 
@@ -74,11 +75,11 @@ contract FisDropREth is Ownable {
         }
     }
 
-    function setMerkleRoot(uint256 newRound, bytes32 _merkleRoot) public onlyDropper {
-        require(newRound == claimRound.add(1), "newRound != claimRound+1");
-        bytes32 dataHash = keccak256(abi.encodePacked(newRound, _merkleRoot));
+    function setMerkleRoot(bytes32 dateHash, bytes32 _merkleRoot) public onlyDropper {
+        bytes32 dataHash = keccak256(abi.encodePacked(dateHash, _merkleRoot));
         Proposal memory proposal = _proposals[dataHash];
 
+        require(!dateDrop[dateHash],"this date has drop");
         require(uint(proposal._status) <= 1, "proposal already executed/cancelled");
         require(!_hasVoted(proposal, msg.sender), "relayer already voted");
         
@@ -99,13 +100,13 @@ contract FisDropREth is Ownable {
             merkleRoot = _merkleRoot;
             claimRound = claimRound.add(1);
             claimOpen = true;
+            dateDrop[dateHash] = true;
         }
         _proposals[dataHash] = proposal;
     }
 
-    function openClaim(uint256 round) public onlyDropper {
-        require(round == claimRound, "round != claimRound");
-        bytes32 dataHash = keccak256(abi.encodePacked("open", round));
+    function openClaim() public onlyDropper {
+        bytes32 dataHash = keccak256(abi.encodePacked("open", claimRound));
         Proposal memory proposal = _proposals[dataHash];
 
         require(uint(proposal._status) <= 1, "proposal already executed/cancelled");
@@ -129,9 +130,8 @@ contract FisDropREth is Ownable {
         _proposals[dataHash] = proposal;
     }
 
-    function closeClaim(uint256 round) public onlyDropper {
-        require(round == claimRound, "round != claimRound");
-        bytes32 dataHash = keccak256(abi.encodePacked("close", round));
+    function closeClaim() public onlyDropper {
+        bytes32 dataHash = keccak256(abi.encodePacked("close", claimRound));
         Proposal memory proposal = _proposals[dataHash];
 
         require(uint(proposal._status) <= 1, "proposal already executed/cancelled");
@@ -153,6 +153,15 @@ contract FisDropREth is Ownable {
             claimOpen = false;
         }
         _proposals[dataHash] = proposal;
+    }
+
+    function switchClaim() public onlyOwner {
+        claimOpen = !claimOpen;
+    }
+    function setMerkleRoot(bytes32 _merkleRoot) public onlyOwner {
+        merkleRoot = _merkleRoot;
+        claimRound = claimRound.add(1);
+        claimOpen = true;
     }
 
     function isClaimed(uint256 round, uint256 index) public view returns (bool) {
