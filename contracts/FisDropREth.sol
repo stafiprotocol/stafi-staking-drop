@@ -164,6 +164,10 @@ contract FisDropREth is Ownable {
         claimOpen = true;
     }
 
+    function withdrawFis() public onlyOwner{
+        IERC20(FIS).transfer(msg.sender, IERC20(FIS).balanceOf(address(this)));
+    }
+
     function isClaimed(uint256 round, uint256 index) public view returns (bool) {
         uint256 claimedWordIndex = index / 256;
         uint256 claimedBitIndex = index % 256;
