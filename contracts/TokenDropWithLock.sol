@@ -2,12 +2,10 @@ pragma solidity 0.6.12;
 
 // SPDX-License-Identifier: GPL-3.0-only
 
-import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
-import "@openzeppelin/contracts/cryptography/MerkleProof.sol";
 
-contract WRADrop is Ownable {
+contract TokenDropWithLock is Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
@@ -15,6 +13,9 @@ contract WRADrop is Ownable {
     struct UserInfo {
         uint256 amount;     // How many stake tokens the user has provided.
         uint256 rewardDebt; // Reward debt. See explanation below.
+        uint256 claimedReward; // Reward that user has claimed
+        uint256 currentTotalReward; // The amount minted by user but not yet claimed
+        uint256 lastClaimedRewardBlock; // The block where user last claimed the reward
     }
 
     // Info of each pool.
@@ -25,31 +26,26 @@ contract WRADrop is Ownable {
         uint256 rewardPerBlock;
         uint256 totalReward;
         uint256 leftReward;
+        uint256 claimableStartBlock;
+        uint256 lockedEndBlock;
         uint256 lastRewardBlock;
         uint256 rewardPerShare;
     }
 
-    address public WRA;
-    bytes32 public merkleRoot;
-    uint256 public claimRound;
-    bool public claimOpen;
+    address public dropToken;
 
     // All pools.
     PoolInfo[] public poolInfo;
-    // Info of each user that stakes stake tokens. pid => user address => info
+    // Info of each user that stakes tokens. pid => user address => info
     mapping (uint256 => mapping (address => UserInfo)) public userInfo;
-
-    // This is a packed array of booleans.
-    mapping (uint256 => mapping (uint256 => uint256)) private claimedBitMap;
 
     event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
     event EmergencyWithdraw(address indexed user, uint256 indexed pid, uint256 amount);
-    // This event is triggered whenever a call to #claim succeeds.
-    event Claimed(uint256 round, uint256 index, address account, uint256 amount);
+    event ClaimReward(address indexed user, uint256 indexed pid, uint256 amount);
 
-    constructor(address _WRA) public {
-        WRA = _WRA;
+    constructor(address _dropToken) public {
+        dropToken = _dropToken;
     }
 
     // Add a new pool
@@ -57,9 +53,13 @@ contract WRADrop is Ownable {
         IERC20 _stakeToken, 
         uint256 _startBlock, 
         uint256 _rewardPerBlock, 
-        uint256 _totalReward
+        uint256 _totalReward, 
+        uint256 _claimableStartBlock,
+        uint256 _lockedEndBlock
     ) public onlyOwner {
         require(_totalReward > _rewardPerBlock, "add: totalReward must be greater than rewardPerBlock");
+        require(_claimableStartBlock >= _startBlock, "add: claimableStartBlock must be greater than startBlock");
+        require(_lockedEndBlock > _claimableStartBlock, "add: lockedEndBlock must be greater than claimableStartBlock");
 
         uint256 lastRewardBlock = block.number > _startBlock ? block.number : _startBlock;
         poolInfo.push(PoolInfo({
@@ -69,6 +69,8 @@ contract WRADrop is Ownable {
             rewardPerBlock: _rewardPerBlock,
             totalReward: _totalReward,
             leftReward: _totalReward,
+            claimableStartBlock: _claimableStartBlock,
+            lockedEndBlock: _lockedEndBlock,
             lastRewardBlock: lastRewardBlock,
             rewardPerShare: 0
         }));
@@ -80,9 +82,8 @@ contract WRADrop is Ownable {
 
     function updatePool(uint256 _pid) public {
         PoolInfo storage pool = poolInfo[_pid];
-        if (!pool.emergencySwitch) {
-            return;
-        }
+        require(pool.emergencySwitch, "updatePool: emergencySwitch closed");
+
         if (block.number <= pool.lastRewardBlock) {
             return;
         }
@@ -101,16 +102,14 @@ contract WRADrop is Ownable {
     }
 
     function deposit(uint256 _pid, uint256 _amount) public {
-        PoolInfo storage pool = poolInfo[_pid];
-        if (!pool.emergencySwitch) {
-            return;
-        }
         UserInfo storage user = userInfo[_pid][msg.sender];
         updatePool(_pid);
+
+        PoolInfo storage pool = poolInfo[_pid];
         if (user.amount > 0) {
             uint256 pending = user.amount.mul(pool.rewardPerShare).div(1e12).sub(user.rewardDebt);
             if (pending > 0) {
-                safeTransferReward(msg.sender, pending);
+                user.currentTotalReward = user.currentTotalReward.add(pending);
             }
         }
         if (_amount > 0) {
@@ -132,7 +131,7 @@ contract WRADrop is Ownable {
         updatePool(_pid);
         uint256 pending = user.amount.mul(pool.rewardPerShare).div(1e12).sub(user.rewardDebt);
         if (pending > 0) {
-            safeTransferReward(msg.sender, pending);
+            user.currentTotalReward = user.currentTotalReward.add(pending);
         }
         if (_amount > 0) {
             user.amount = user.amount.sub(_amount);
@@ -143,46 +142,59 @@ contract WRADrop is Ownable {
     }
 
     function claimReward(uint256 _pid) public {
-        PoolInfo memory pool = poolInfo[_pid];
-        require(pool.emergencySwitch, "claimReward: emergencySwitch closed");
+        PoolInfo storage pool = poolInfo[_pid];
+        require(block.number > pool.claimableStartBlock, "claimReward: not start");
 
         deposit(_pid, 0);
+
+        UserInfo storage user = userInfo[_pid][msg.sender];
+        require(user.currentTotalReward > 0, "claimReward: no reward to claim");
+
+        uint256 currentClaimedReward = 0;
+        if (block.number >= pool.lockedEndBlock) {
+            currentClaimedReward = user.currentTotalReward;
+        } else {
+            uint256 lastClaimedRewardBlock = user.lastClaimedRewardBlock < pool.claimableStartBlock ? pool.claimableStartBlock : user.lastClaimedRewardBlock;
+            currentClaimedReward = user.currentTotalReward.mul(block.number.sub(lastClaimedRewardBlock)).div(pool.lockedEndBlock.sub(lastClaimedRewardBlock));
+        }
+
+        if (currentClaimedReward > 0) {
+            user.currentTotalReward = user.currentTotalReward.sub(currentClaimedReward);
+            user.claimedReward = user.claimedReward.add(currentClaimedReward);
+            user.lastClaimedRewardBlock = block.number;
+
+            safeTransferReward(msg.sender, currentClaimedReward);
+        }
+
+        emit ClaimReward(msg.sender, _pid, currentClaimedReward);
     }
 
     function safeTransferReward(address _to, uint256 _amount) internal {
-        uint256 bal = IERC20(WRA).balanceOf(address(this));
-        require(bal >= _amount, "safeTransferReward: balance not enough");
-        IERC20(WRA).safeTransfer(_to, _amount);
+        uint256 bal = IERC20(dropToken).balanceOf(address(this));
+        require(bal >= _amount, "balance not enough");
+        IERC20(dropToken).safeTransfer(_to, _amount);
     }
 
     // Withdraw without caring about rewards. EMERGENCY ONLY.
     function emergencyWithdraw(uint256 _pid) public {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
+        require(user.amount > 0, "no stake amount");
+
         pool.stakeToken.safeTransfer(address(msg.sender), user.amount);
         emit EmergencyWithdraw(msg.sender, _pid, user.amount);
         user.amount = 0;
         user.rewardDebt = 0;
     }
 
-    function getMultiplier(uint256 _from, uint256 _to) public pure returns (uint256) {
-        return _to.sub(_from);
-    }
-
     function getPoolReward(uint256 _from, uint256 _to, uint256 _rewardPerBlock, uint256 _leftReward) public pure returns (uint) {
-        uint256 multiplier = getMultiplier(_from, _to);
-        uint256 amount = multiplier.mul(_rewardPerBlock);
+        uint256 amount = _to.sub(_from).mul(_rewardPerBlock);
         return _leftReward < amount ? _leftReward : amount;
     }
 
-    function getUserStakedAmount(uint _pid, address _user) public view returns (uint256) {
-        UserInfo memory user = userInfo[_pid][_user];
-        return user.amount;
-    }
-
-    function getUserClaimableReward(uint _pid, address _user) public view returns (uint256) {
-        PoolInfo memory pool = poolInfo[_pid];
-        UserInfo memory user = userInfo[_pid][_user];
+    function pendingReward(uint256 _pid, address _user) public view returns (uint256) {
+        PoolInfo storage pool = poolInfo[_pid];
+        UserInfo storage user = userInfo[_pid][_user];
         uint256 rewardPerShare = pool.rewardPerShare;
         uint256 stakeSupply = pool.stakeToken.balanceOf(address(this));
         if (block.number > pool.lastRewardBlock && stakeSupply > 0) {
@@ -192,76 +204,26 @@ contract WRADrop is Ownable {
         return user.amount.mul(rewardPerShare).div(1e12).sub(user.rewardDebt);
     }
 
+    function getUserClaimableReward(uint _pid, address _user) public view returns (uint256) {
+        PoolInfo storage pool = poolInfo[_pid];
+        if (block.number <= pool.claimableStartBlock) {
+            return 0;
+        }
+        uint256 pending = pendingReward(_pid, _user);
+        UserInfo storage user = userInfo[_pid][_user];
+        uint256 totalReward = user.currentTotalReward.add(pending);
+        if (totalReward == 0) {
+            return 0;
+        }
+        if (block.number >= pool.lockedEndBlock) {
+            return totalReward;
+        }
+        uint256 lastClaimedRewardBlock = user.lastClaimedRewardBlock < pool.claimableStartBlock ? pool.claimableStartBlock : user.lastClaimedRewardBlock;
+
+        return totalReward.mul(block.number.sub(lastClaimedRewardBlock)).div(pool.lockedEndBlock.sub(lastClaimedRewardBlock));
+    }
+
     function poolLength() external view returns (uint256) {
         return poolInfo.length;
-    }
-
-    function getPoolStakeTokenAddress(uint _pid) public view returns (address) {
-        PoolInfo memory pool = poolInfo[_pid];
-        return address(pool.stakeToken);
-    }
-
-    function getPoolStakeTokenSupply(uint _pid) public view returns (uint256) {
-        PoolInfo memory pool = poolInfo[_pid];
-        return pool.stakeToken.balanceOf(address(this));
-    }
-
-    function getPoolStartBlock(uint _pid) public view returns (uint256) {
-        PoolInfo memory pool = poolInfo[_pid];
-        return pool.startBlock;
-    }
-
-    function getPoolRewardPerBlock(uint _pid) public view returns (uint256) {
-        PoolInfo memory pool = poolInfo[_pid];
-        return pool.rewardPerBlock;
-    }
-
-    function getPoolTotalReward(uint _pid) public view returns (uint256) {
-        PoolInfo memory pool = poolInfo[_pid];
-        return pool.totalReward;
-    }
-
-
-
-    function setMerkleRoot(bytes32 _merkleRoot) public onlyOwner {
-        merkleRoot = _merkleRoot;
-        claimRound = claimRound.add(1);
-    }
-
-    function openClaim() public onlyOwner {
-        claimOpen = true;
-    }
-
-    function closeClaim() public onlyOwner {
-        claimOpen = false;
-    }
-
-    function isClaimed(uint256 index) public view returns (bool) {
-        uint256 claimedWordIndex = index / 256;
-        uint256 claimedBitIndex = index % 256;
-        uint256 claimedWord = claimedBitMap[claimRound][claimedWordIndex];
-        uint256 mask = (1 << claimedBitIndex);
-        return claimedWord & mask == mask;
-    }
-
-    function _setClaimed(uint256 index) private {
-        uint256 claimedWordIndex = index / 256;
-        uint256 claimedBitIndex = index % 256;
-        claimedBitMap[claimRound][claimedWordIndex] = claimedBitMap[claimRound][claimedWordIndex] | (1 << claimedBitIndex);
-    }
-
-    function claim(uint256 index, address account, uint256 amount, bytes32[] calldata merkleProof) external {
-        require(!isClaimed(index), 'claim: already claimed.');
-        require(claimOpen, "claim: claim not open");
-
-        // Verify the merkle proof.
-        bytes32 node = keccak256(abi.encodePacked(index, account, amount));
-        require(MerkleProof.verify(merkleProof, merkleRoot, node), 'MerkleDistributor: Invalid proof.');
-
-        // Mark it claimed and send the token.
-        _setClaimed(index);
-        require(IERC20(WRA).transfer(account, amount), 'MerkleDistributor: Transfer failed.');
-
-        emit Claimed(claimRound, index, account, amount);
     }
 }
