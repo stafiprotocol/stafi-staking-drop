@@ -22,6 +22,7 @@ contract TokenDropWithLock is Ownable {
     struct PoolInfo {
         bool emergencySwitch;
         IBEP20 stakeToken;
+        uint256 stakeTokenSupply;
         uint256 startBlock;
         uint256 rewardPerBlock;
         uint256 totalReward;
@@ -65,6 +66,7 @@ contract TokenDropWithLock is Ownable {
         poolInfo.push(PoolInfo({
             emergencySwitch: true,
             stakeToken: _stakeToken,
+            stakeTokenSupply: 0,
             startBlock: _startBlock,
             rewardPerBlock: _rewardPerBlock,
             totalReward: _totalReward,
@@ -115,6 +117,7 @@ contract TokenDropWithLock is Ownable {
         if (_amount > 0) {
             pool.stakeToken.safeTransferFrom(address(msg.sender), address(this), _amount);
             user.amount = user.amount.add(_amount);
+            pool.stakeTokenSupply = pool.stakeTokenSupply.add(_amount);
         }
         user.rewardDebt = user.amount.mul(pool.rewardPerShare).div(1e12);
         emit Deposit(msg.sender, _pid, _amount);
@@ -135,6 +138,7 @@ contract TokenDropWithLock is Ownable {
         }
         if (_amount > 0) {
             user.amount = user.amount.sub(_amount);
+            pool.stakeTokenSupply = pool.stakeTokenSupply.sub(_amount);
             pool.stakeToken.safeTransfer(address(msg.sender), _amount);
         }
         user.rewardDebt = user.amount.mul(pool.rewardPerShare).div(1e12);
@@ -185,6 +189,7 @@ contract TokenDropWithLock is Ownable {
         emit EmergencyWithdraw(msg.sender, _pid, user.amount);
         user.amount = 0;
         user.rewardDebt = 0;
+        pool.stakeTokenSupply = pool.stakeTokenSupply.sub(user.amount);
     }
 
     function getPoolReward(uint256 _from, uint256 _to, uint256 _rewardPerBlock, uint256 _leftReward) public pure returns (uint) {
