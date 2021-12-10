@@ -89,7 +89,7 @@ contract TokenDropWithLock is Ownable {
         if (block.number <= pool.lastRewardBlock) {
             return;
         }
-        uint256 stakeSupply = pool.stakeToken.balanceOf(address(this));
+        uint256 stakeSupply = pool.stakeTokenSupply;
         if (stakeSupply == 0) {
             pool.lastRewardBlock = block.number;
             return;
@@ -201,7 +201,7 @@ contract TokenDropWithLock is Ownable {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
         uint256 rewardPerShare = pool.rewardPerShare;
-        uint256 stakeSupply = pool.stakeToken.balanceOf(address(this));
+        uint256 stakeSupply = pool.stakeTokenSupply;
         if (block.number > pool.lastRewardBlock && stakeSupply > 0) {
             uint256 reward = getPoolReward(pool.lastRewardBlock, block.number, pool.rewardPerBlock, pool.leftReward);
             rewardPerShare = rewardPerShare.add(reward.mul(1e12).div(stakeSupply));
