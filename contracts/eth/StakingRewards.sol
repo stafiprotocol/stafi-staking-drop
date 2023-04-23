@@ -175,10 +175,10 @@ contract StakingRewards is Ownable {
     function getPoolReward(
         uint256 _from,
         uint256 _to,
-        uint256 _rewardPerBlock,
+        uint256 _rewardPerSecond,
         uint256 _leftReward
     ) public pure returns (uint) {
-        uint256 amount = _to.sub(_from).mul(_rewardPerBlock);
+        uint256 amount = _to.sub(_from).mul(_rewardPerSecond);
         return _leftReward < amount ? _leftReward : amount;
     }
 

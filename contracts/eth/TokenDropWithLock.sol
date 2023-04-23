@@ -180,16 +180,18 @@ contract TokenDropWithLock is Ownable {
     }
 
     // Withdraw without caring about rewards. EMERGENCY ONLY.
-    function emergencyWithdraw(uint256 _pid) public {
+    function emergencyWithdraw(uint256 _pid) private {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
-        require(user.amount > 0, "no stake amount");
+        uint256 willWithdrawAmount = user.amount;
+        require(willWithdrawAmount > 0, "no stake amount");
 
-        pool.stakeToken.safeTransfer(address(msg.sender), user.amount);
-        emit EmergencyWithdraw(msg.sender, _pid, user.amount);
+        pool.stakeTokenSupply = pool.stakeTokenSupply.sub(willWithdrawAmount);
         user.amount = 0;
         user.rewardDebt = 0;
-        pool.stakeTokenSupply = pool.stakeTokenSupply.sub(user.amount);
+
+        pool.stakeToken.safeTransfer(address(msg.sender), willWithdrawAmount);
+        emit EmergencyWithdraw(msg.sender, _pid, willWithdrawAmount);
     }
 
     function getPoolReward(uint256 _from, uint256 _to, uint256 _rewardPerBlock, uint256 _leftReward) public pure returns (uint) {
