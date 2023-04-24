@@ -1,7 +1,6 @@
 pragma solidity 0.6.12;
 
 // SPDX-License-Identifier: GPL-3.0-only
-
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 
@@ -19,6 +18,7 @@ contract StakingRewards is Ownable {
     struct PoolInfo {
         bool emergencySwitch;
         IERC20 stakeToken;
+        IERC20 rewardToken;
         uint256 stakeTokenSupply;
         uint256 startTimestamp;
         uint256 rewardPerSecond;
@@ -27,8 +27,6 @@ contract StakingRewards is Ownable {
         uint256 lastRewardTimestamp;
         uint256 rewardPerShare;
     }
-
-    address public dropToken;
 
     // All pools.
     PoolInfo[] public poolInfo;
@@ -39,13 +37,12 @@ contract StakingRewards is Ownable {
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
     event EmergencyWithdraw(address indexed user, uint256 indexed pid, uint256 amount);
 
-    constructor(address _dropToken) public {
-        dropToken = _dropToken;
-    }
+    constructor() public {}
 
     // Add a new pool
     function add(
         IERC20 _stakeToken,
+        IERC20 _rewardToken,
         uint256 _startTimestamp,
         uint256 _rewardPerSecond,
         uint256 _totalReward
@@ -57,6 +54,7 @@ contract StakingRewards is Ownable {
             PoolInfo({
                 emergencySwitch: false,
                 stakeToken: _stakeToken,
+                rewardToken: _rewardToken,
                 stakeTokenSupply: 0,
                 startTimestamp: _startTimestamp,
                 rewardPerSecond: _rewardPerSecond,
@@ -80,8 +78,7 @@ contract StakingRewards is Ownable {
         if (block.timestamp <= pool.lastRewardTimestamp) {
             return;
         }
-        uint256 stakeSupply = pool.stakeToken.balanceOf(address(this));
-        if (stakeSupply == 0) {
+        if (pool.stakeTokenSupply == 0) {
             pool.lastRewardTimestamp = block.timestamp;
             return;
         }
@@ -94,7 +91,7 @@ contract StakingRewards is Ownable {
 
         if (reward > 0) {
             pool.leftReward = pool.leftReward.sub(reward);
-            pool.rewardPerShare = pool.rewardPerShare.add(reward.mul(1e12).div(stakeSupply));
+            pool.rewardPerShare = pool.rewardPerShare.add(reward.mul(1e12).div(pool.stakeTokenSupply));
         }
         pool.lastRewardTimestamp = block.timestamp;
     }
@@ -110,7 +107,7 @@ contract StakingRewards is Ownable {
         if (user.amount > 0) {
             uint256 pending = user.amount.mul(pool.rewardPerShare).div(1e12).sub(user.rewardDebt);
             if (pending > 0) {
-                safeTransferReward(msg.sender, pending);
+                safeTransferReward(pool.rewardToken, msg.sender, pending);
             }
         }
         if (_amount > 0) {
@@ -136,7 +133,7 @@ contract StakingRewards is Ownable {
 
         uint256 pending = user.amount.mul(pool.rewardPerShare).div(1e12).sub(user.rewardDebt);
         if (pending > 0) {
-            safeTransferReward(msg.sender, pending);
+            safeTransferReward(pool.rewardToken, msg.sender, pending);
         }
         if (_amount > 0) {
             user.amount = user.amount.sub(_amount);
@@ -151,14 +148,14 @@ contract StakingRewards is Ownable {
         deposit(_pid, 0);
     }
 
-    function safeTransferReward(address _to, uint256 _amount) internal {
-        uint256 bal = IERC20(dropToken).balanceOf(address(this));
+    function safeTransferReward(IERC20 rewardToken, address _to, uint256 _amount) internal {
+        uint256 bal = rewardToken.balanceOf(address(this));
         require(bal >= _amount, "balance not enough");
-        IERC20(dropToken).safeTransfer(_to, _amount);
+        rewardToken.safeTransfer(_to, _amount);
     }
 
     // Withdraw without caring about rewards. EMERGENCY ONLY.
-    function emergencyWithdraw(uint256 _pid) private {
+    function emergencyWithdraw(uint256 _pid) public {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
         uint256 willWithdrawAmount = user.amount;
@@ -186,15 +183,14 @@ contract StakingRewards is Ownable {
         PoolInfo memory pool = poolInfo[_pid];
         UserInfo memory user = userInfo[_pid][_user];
         uint256 rewardPerShare = pool.rewardPerShare;
-        uint256 stakeSupply = pool.stakeToken.balanceOf(address(this));
-        if (block.timestamp > pool.lastRewardTimestamp && stakeSupply > 0) {
+        if (block.timestamp > pool.lastRewardTimestamp && pool.stakeTokenSupply > 0) {
             uint256 reward = getPoolReward(
                 pool.lastRewardTimestamp,
                 block.timestamp,
                 pool.rewardPerSecond,
                 pool.leftReward
             );
-            rewardPerShare = rewardPerShare.add(reward.mul(1e12).div(stakeSupply));
+            rewardPerShare = rewardPerShare.add(reward.mul(1e12).div(pool.stakeTokenSupply));
         }
         return user.amount.mul(rewardPerShare).div(1e12).sub(user.rewardDebt);
     }
