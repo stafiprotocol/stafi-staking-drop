@@ -11,7 +11,7 @@ contract TokenDropWithLock is Ownable {
 
     // Info of each user.
     struct UserInfo {
-        uint256 amount;     // How many stake tokens the user has provided.
+        uint256 amount; // How many stake tokens the user has provided.
         uint256 rewardDebt; // Reward debt. See explanation below.
         uint256 claimedReward; // Reward that user has claimed
         uint256 currentTotalReward; // The amount minted by user but not yet claimed
@@ -38,7 +38,7 @@ contract TokenDropWithLock is Ownable {
     // All pools.
     PoolInfo[] public poolInfo;
     // Info of each user that stakes tokens. pid => user address => info
-    mapping (uint256 => mapping (address => UserInfo)) public userInfo;
+    mapping(uint256 => mapping(address => UserInfo)) public userInfo;
 
     event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
@@ -51,10 +51,10 @@ contract TokenDropWithLock is Ownable {
 
     // Add a new pool
     function add(
-        IERC20 _stakeToken, 
-        uint256 _startBlock, 
-        uint256 _rewardPerBlock, 
-        uint256 _totalReward, 
+        IERC20 _stakeToken,
+        uint256 _startBlock,
+        uint256 _rewardPerBlock,
+        uint256 _totalReward,
         uint256 _claimableStartBlock,
         uint256 _lockedEndBlock
     ) public onlyOwner {
@@ -63,19 +63,21 @@ contract TokenDropWithLock is Ownable {
         require(_lockedEndBlock > _claimableStartBlock, "add: lockedEndBlock must be greater than claimableStartBlock");
 
         uint256 lastRewardBlock = block.number > _startBlock ? block.number : _startBlock;
-        poolInfo.push(PoolInfo({
-            emergencySwitch: true,
-            stakeToken: _stakeToken,
-            stakeTokenSupply: 0,
-            startBlock: _startBlock,
-            rewardPerBlock: _rewardPerBlock,
-            totalReward: _totalReward,
-            leftReward: _totalReward,
-            claimableStartBlock: _claimableStartBlock,
-            lockedEndBlock: _lockedEndBlock,
-            lastRewardBlock: lastRewardBlock,
-            rewardPerShare: 0
-        }));
+        poolInfo.push(
+            PoolInfo({
+                emergencySwitch: true,
+                stakeToken: _stakeToken,
+                stakeTokenSupply: 0,
+                startBlock: _startBlock,
+                rewardPerBlock: _rewardPerBlock,
+                totalReward: _totalReward,
+                leftReward: _totalReward,
+                claimableStartBlock: _claimableStartBlock,
+                lockedEndBlock: _lockedEndBlock,
+                lastRewardBlock: lastRewardBlock,
+                rewardPerShare: 0
+            })
+        );
     }
 
     function set(uint256 _pid, bool _emergencySwitch) public onlyOwner {
@@ -89,16 +91,15 @@ contract TokenDropWithLock is Ownable {
         if (block.number <= pool.lastRewardBlock) {
             return;
         }
-        uint256 stakeSupply = pool.stakeTokenSupply;
-        if (stakeSupply == 0) {
+        if (pool.stakeTokenSupply == 0) {
             pool.lastRewardBlock = block.number;
             return;
         }
         uint256 reward = getPoolReward(pool.lastRewardBlock, block.number, pool.rewardPerBlock, pool.leftReward);
-        
+
         if (reward > 0) {
             pool.leftReward = pool.leftReward.sub(reward);
-            pool.rewardPerShare = pool.rewardPerShare.add(reward.mul(1e12).div(stakeSupply));
+            pool.rewardPerShare = pool.rewardPerShare.add(reward.mul(1e12).div(pool.stakeTokenSupply));
         }
         pool.lastRewardBlock = block.number;
     }
@@ -158,8 +159,12 @@ contract TokenDropWithLock is Ownable {
         if (block.number >= pool.lockedEndBlock) {
             currentClaimedReward = user.currentTotalReward;
         } else {
-            uint256 lastClaimedRewardBlock = user.lastClaimedRewardBlock < pool.claimableStartBlock ? pool.claimableStartBlock : user.lastClaimedRewardBlock;
-            currentClaimedReward = user.currentTotalReward.mul(block.number.sub(lastClaimedRewardBlock)).div(pool.lockedEndBlock.sub(lastClaimedRewardBlock));
+            uint256 lastClaimedRewardBlock = user.lastClaimedRewardBlock < pool.claimableStartBlock
+                ? pool.claimableStartBlock
+                : user.lastClaimedRewardBlock;
+            currentClaimedReward = user.currentTotalReward.mul(block.number.sub(lastClaimedRewardBlock)).div(
+                pool.lockedEndBlock.sub(lastClaimedRewardBlock)
+            );
         }
 
         if (currentClaimedReward > 0) {
@@ -180,7 +185,7 @@ contract TokenDropWithLock is Ownable {
     }
 
     // Withdraw without caring about rewards. EMERGENCY ONLY.
-    function emergencyWithdraw(uint256 _pid) private {
+    function emergencyWithdraw(uint256 _pid) public {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
         uint256 willWithdrawAmount = user.amount;
@@ -194,7 +199,12 @@ contract TokenDropWithLock is Ownable {
         emit EmergencyWithdraw(msg.sender, _pid, willWithdrawAmount);
     }
 
-    function getPoolReward(uint256 _from, uint256 _to, uint256 _rewardPerBlock, uint256 _leftReward) public pure returns (uint) {
+    function getPoolReward(
+        uint256 _from,
+        uint256 _to,
+        uint256 _rewardPerBlock,
+        uint256 _leftReward
+    ) public pure returns (uint) {
         uint256 amount = _to.sub(_from).mul(_rewardPerBlock);
         return _leftReward < amount ? _leftReward : amount;
     }
@@ -203,10 +213,9 @@ contract TokenDropWithLock is Ownable {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
         uint256 rewardPerShare = pool.rewardPerShare;
-        uint256 stakeSupply = pool.stakeTokenSupply;
-        if (block.number > pool.lastRewardBlock && stakeSupply > 0) {
+        if (block.number > pool.lastRewardBlock && pool.stakeTokenSupply > 0) {
             uint256 reward = getPoolReward(pool.lastRewardBlock, block.number, pool.rewardPerBlock, pool.leftReward);
-            rewardPerShare = rewardPerShare.add(reward.mul(1e12).div(stakeSupply));
+            rewardPerShare = rewardPerShare.add(reward.mul(1e12).div(pool.stakeTokenSupply));
         }
         return user.amount.mul(rewardPerShare).div(1e12).sub(user.rewardDebt);
     }
@@ -225,9 +234,14 @@ contract TokenDropWithLock is Ownable {
         if (block.number >= pool.lockedEndBlock) {
             return totalReward;
         }
-        uint256 lastClaimedRewardBlock = user.lastClaimedRewardBlock < pool.claimableStartBlock ? pool.claimableStartBlock : user.lastClaimedRewardBlock;
+        uint256 lastClaimedRewardBlock = user.lastClaimedRewardBlock < pool.claimableStartBlock
+            ? pool.claimableStartBlock
+            : user.lastClaimedRewardBlock;
 
-        return totalReward.mul(block.number.sub(lastClaimedRewardBlock)).div(pool.lockedEndBlock.sub(lastClaimedRewardBlock));
+        return
+            totalReward.mul(block.number.sub(lastClaimedRewardBlock)).div(
+                pool.lockedEndBlock.sub(lastClaimedRewardBlock)
+            );
     }
 
     function poolLength() external view returns (uint256) {
