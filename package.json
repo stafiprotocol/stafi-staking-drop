@@ -4,13 +4,19 @@
   "description": "",
   "repository": "https://github.com/stafiprotocol/stafi-staking-drop",
   "scripts": {
-    "compile": "truffle compile"
+    "compile": "hardhat compile",
+    "size": "hardhat size-contracts",
+    "test": "hardhat test ./test/FISDrop.test.js",
+    "clean": "rm -rf ./node_modules ./artifacts ./cache"
   },
   "author": "Stafi Technologies",
   "license": "GPL-3.0-only",
   "devDependencies": {
     "@nomiclabs/hardhat-ethers": "^2.0.2",
     "@nomiclabs/hardhat-waffle": "^2.0.1",
+    "@nomiclabs/hardhat-etherscan": "^3.1.1",
+    "@nomiclabs/hardhat-web3": "^2.0.0",
+    "hardhat-contract-sizer": "^2.6.1",
     "@openzeppelin/contracts": "^3.2.0",
     "chai": "^4.3.4",
     "ethereum-waffle": "^3.3.0",
